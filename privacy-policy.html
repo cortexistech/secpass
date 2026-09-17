@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Política de Privacidade - SecPass</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<header><div class="mark"></div><div class="brand">SecPass</div></header>
+<nav><a href="index.html">Início</a><a href="terms-of-service.html">Termos de Uso</a></nav>
+<h1>Política de Privacidade do SecPass</h1>
+<p>Última atualização: 10 de setembro de 2026</p>
+<p>Esta Política de Privacidade descreve como o aplicativo <strong>SecPass</strong> (&quot;o
+Aplicativo&quot;) trata dados ao ser usado em seu dispositivo Android, iOS,
+macOS ou Windows.</p>
+<blockquote>
+<p><strong>Aviso</strong>: este documento foi redigido para refletir com precisão o
+funcionamento atual do Aplicativo. Ele não substitui aconselhamento
+jurídico. Antes de publicar nas lojas, recomenda-se revisão por um
+advogado, especialmente quanto a LGPD (Brasil), GDPR (UE) ou outras leis
+aplicáveis aos países onde o app será distribuído — em especial as
+seções 2.1, 3, 7 e 10 abaixo, que dependem da sincronização opcional
+descrita a seguir e ainda não passaram por essa revisão.</p>
+</blockquote>
+<h2>1. Resumo</h2>
+<p>O SecPass é um cofre de senhas com <strong>criptografia de ponta a ponta (E2E)
+feita no seu próprio aparelho</strong>. O Aplicativo não possui servidor próprio.
+Por padrão, tudo o que você cadastra fica armazenado, de forma
+criptografada, apenas no aparelho em que o Aplicativo está instalado. Você
+pode, opcionalmente, ativar a sincronização entre seus próprios
+aparelhos — nesse caso, uma cópia <strong>já cifrada</strong> do seu cofre passa a
+ficar guardada também na sua própria conta Google (Google Drive) ou Apple
+(iCloud), à sua escolha (ver Seção 2.6). Em nenhum momento o SecPass ou seu
+desenvolvedor recebe, vê ou tem acesso ao conteúdo do seu cofre em texto
+claro. A única exceção não relacionada ao cofre é o envio automático de
+relatórios técnicos de erro (sem senhas ou dados do cofre) para
+diagnóstico — ver Seção 2.5.</p>
+<h2>2. Quais dados o Aplicativo processa</h2>
+<h3>2.1 Dados que você cadastra</h3>
+<ul>
+<li><strong>Conta local de acesso</strong>: e-mail (usado apenas como identificador local
+e, se a sincronização estiver ativa, para localizar seu cofre na nuvem)
+e senha mestra.</li>
+<li><strong>Itens do cofre</strong>: título, usuário e senha de cada credencial que você
+adiciona.</li>
+</ul>
+<p>Esses dados <strong>nunca são transmitidos em texto claro</strong> para o desenvolvedor
+do SecPass, para servidores próprios do desenvolvedor ou para qualquer
+terceiro. Não existe conta em nuvem operada pelo desenvolvedor, nem
+backend próprio para o cofre. Se você ativar a sincronização (Seção 2.6),
+uma versão já cifrada do cofre passa a existir também na sua própria conta
+Google ou Apple — nunca em infraestrutura do desenvolvedor.</p>
+<h3>2.2 Como esses dados são armazenados</h3>
+<ul>
+<li>A senha mestra nunca é salva em texto puro: é transformada com
+PBKDF2-SHA256 (600.000 iterações) antes de ser gravada.</li>
+<li>O cofre de credenciais é cifrado com AES-256-GCM (cifra autenticada, que
+garante sigilo e integridade numa única primitiva), usando uma chave
+derivada da sua senha mestra.</li>
+<li>Os dados cifrados ficam no armazenamento seguro do sistema operacional
+(Keychain no iOS/macOS, Keystore no Android, DPAPI no Windows),
+protegidos por autenticação obrigatória do aparelho.</li>
+</ul>
+<h3>2.3 Autenticação biométrica</h3>
+<p>O SecPass pode usar Face ID, Touch ID ou biometria do Android para
+desbloquear o cofre. Essa autenticação é processada inteiramente pelo
+sistema operacional do seu aparelho: <strong>o Aplicativo nunca recebe, acessa ou
+armazena seus dados biométricos brutos</strong> (impressão digital, face). O
+Aplicativo apenas recebe um resultado de &quot;autenticado&quot; ou &quot;não autenticado&quot;
+do sistema operacional. A biometria é sempre uma conveniência sobre uma
+chave já derivada da sua senha mestra — nunca substitui nem contorna essa
+senha.</p>
+<h3>2.4 Registro de eventos de segurança</h3>
+<p>O Aplicativo mantém, localmente e de forma cifrada, um histórico dos
+últimos eventos de segurança (tentativas de login, bloqueios, exportação e
+importação de backup). Esse histórico não sai do dispositivo e pode ser
+apagado a qualquer momento pelo usuário.</p>
+<h3>2.5 Relatórios de erro (Sentry)</h3>
+<p>O Aplicativo usa o serviço <strong>Sentry</strong> para receber, automaticamente,
+relatórios técnicos quando ocorre um erro ou travamento. O que é enviado:
+mensagem e pilha de chamadas (<em>stack trace</em>) do erro, modelo/versão do
+sistema operacional, versão do Aplicativo e identificadores técnicos
+genéricos (não vinculados à sua identidade — nenhum e-mail, nome ou dado de
+conta é enviado).</p>
+<p>O Aplicativo aplica um filtro antes de qualquer envio que remove
+automaticamente campos com nomes associados a dados sensíveis (senha,
+segredo do cofre, chaves de criptografia, valores cifrados) de qualquer
+relatório. Nenhum item do cofre, senha mestra ou conteúdo de tela é
+capturado ou enviado — o Aplicativo não usa gravação de tela nem captura
+de tela para esse fim. O Sentry processa esses relatórios como
+subcontratado (processador de dados) do desenvolvedor do SecPass, apenas
+para fins de diagnóstico e correção de falhas.</p>
+<h3>2.6 Sincronização entre seus próprios dispositivos (opcional)</h3>
+<p>Por padrão o SecPass funciona 100% local. Você pode ativar, a qualquer
+momento e por aparelho, a sincronização do cofre entre os aparelhos que
+você mesmo possui, escolhendo um dos dois backends abaixo:</p>
+<ul>
+<li><strong>Google Drive</strong>: o cofre cifrado é salvo numa pasta especial e oculta
+da sua própria conta Google (<code>appDataFolder</code>), invisível na interface
+normal do Google Drive e acessível apenas pelo próprio Aplicativo.
+Disponível em Android, iOS, macOS e Windows.</li>
+<li><strong>iCloud</strong>: o cofre cifrado é salvo via CloudKit na sua própria conta
+Apple (iCloud), na base de dados privada do seu usuário. Disponível
+apenas entre iPhone e Mac.</li>
+</ul>
+<p>Em ambos os casos, <strong>o que sai do seu dispositivo é sempre o cofre já
+cifrado (AES-256-GCM)</strong> — a senha mestra e o conteúdo em texto claro do
+cofre nunca são enviados à Google, à Apple ou a qualquer servidor. A
+Google e a Apple, nessas condições, atuam apenas como um espaço de
+armazenamento de um arquivo opaco que nem elas conseguem decifrar (nunca
+recebem a sua senha mestra nem a chave derivada dela) — o SecPass e seu
+desenvolvedor também não têm acesso a esse arquivo, já que ele fica na sua
+própria conta Google/Apple, não em infraestrutura do desenvolvedor.</p>
+<p>Ativar essa sincronização amplia, na prática, o que protege seus dados:
+quem comprometer sua conta Google ou Apple passa a poder baixar esse
+arquivo cifrado e tentar quebrar a senha mestra offline (sem limite de
+tentativas imposto pelo SecPass, já que isso aconteceria fora do
+Aplicativo). Por isso o Aplicativo recomenda ativar a verificação em duas
+etapas nessas contas antes de ligar a sincronização. Desativar a
+sincronização a qualquer momento não apaga a cópia já enviada
+anteriormente para a nuvem — use as configurações da sua própria conta
+Google/Apple, ou a função de exclusão de conta (Seção 5), para isso.</p>
+<h2>3. O que o Aplicativo NÃO faz</h2>
+<ul>
+<li>Não coleta dados analíticos ou de uso (cliques, navegação, publicidade).</li>
+<li>Não usa SDKs de publicidade ou rastreamento de terceiros.</li>
+<li>Não possui backend ou banco de dados próprio na nuvem para o cofre do
+usuário — quando a sincronização está ativa (Seção 2.6), o
+armazenamento é sempre na conta Google/Apple do próprio usuário, nunca
+em infraestrutura do desenvolvedor.</li>
+<li>Não compartilha, vende ou transfere itens do cofre a terceiros — o
+conteúdo do cofre <strong>em texto claro</strong> nunca deixa o dispositivo, mesmo
+quando a sincronização opcional está ativa (só o cofre cifrado é
+transmitido, e só para a própria conta do usuário). O único outro dado
+que sai do aparelho é o relatório técnico de erro descrito na Seção 2.5.</li>
+</ul>
+<h2>4. Backup exportado pelo usuário</h2>
+<p>O Aplicativo oferece uma função opcional de &quot;Exportar&quot; que gera um arquivo
+cifrado (mesmo algoritmo do cofre local) e o entrega ao <strong>sistema de
+compartilhamento nativo do seu aparelho</strong> (para você salvar onde quiser:
+Arquivos, e-mail, outro app, etc.). O SecPass não recebe, armazena nem tem
+acesso a esse arquivo depois que ele é compartilhado — o controle sobre onde
+ele fica salvo é inteiramente seu. Proteja esse arquivo como protegeria sua
+senha mestra.</p>
+<h2>5. Exclusão de conta e de dados</h2>
+<p>Você pode excluir sua conta local e todos os dados do cofre a qualquer
+momento, diretamente no Aplicativo, pelo botão <strong>&quot;Excluir conta e todos os
+dados&quot;</strong> (requer confirmação com sua senha de acesso — e, quando
+disponível, biometria/Touch ID adicional — por ser uma ação irreversível).
+Essa ação apaga: a conta, o cofre de credenciais e o histórico de eventos
+de segurança armazenados localmente neste aparelho, <strong>e também a cópia
+cifrada do cofre na sua conta Google/iCloud, se a sincronização estava
+ativa</strong> — todos os outros aparelhos ainda conectados a essa sincronização
+perdem acesso ao cofre remoto a partir desse momento. Desinstalar o
+Aplicativo remove os dados armazenados localmente por ele no dispositivo,
+mas <strong>não apaga</strong> uma cópia sincronizada que já esteja na sua conta
+Google/iCloud — para isso, use &quot;Excluir conta e todos os dados&quot; antes de
+desinstalar, ou remova o arquivo diretamente pela sua conta Google/Apple.</p>
+<p>Relatórios de erro já enviados ao Sentry antes da exclusão (Seção 2.5) não
+contêm dados do cofre e seguem a política de retenção do próprio Sentry.</p>
+<h2>6. Perda de dados e recuperação de senha</h2>
+<p>Como não existe backend do desenvolvedor guardando sua senha, <strong>o
+desenvolvedor do SecPass não tem como recuperar sua senha mestra nem seu
+cofre</strong>. Se você esquecer a senha e recriar a conta local (fluxo &quot;Esqueci
+minha senha&quot;), o cofre salvo com a senha anterior se torna inacessível
+neste aparelho — a menos que você tenha um backup exportado previamente
+(Seção 4), ou que outro aparelho seu ainda tenha a sessão aberta com a
+senha antiga e a sincronização ativa (nesse caso, o cofre sincronizado
+continua intacto e acessível a partir daquele outro aparelho).</p>
+<h2>7. Seus direitos sobre os dados</h2>
+<p>Todo o processamento e toda a decisão de compartilhar dados (ativar ou não
+a sincronização, com qual conta) acontece localmente, sob seu controle
+direto — sem depender de pedidos ao desenvolvedor, que nunca tem acesso ao
+conteúdo do seu cofre em nenhum cenário. Ainda assim, para fins de
+conformidade legal:</p>
+<ul>
+<li><strong>LGPD (Lei nº 13.709/2018, Brasil)</strong>: os direitos do titular previstos no
+art. 18 (acesso, correção, exclusão, portabilidade) são exercidos
+diretamente no Aplicativo — visualizar/editar itens do cofre, usar
+&quot;Exportar&quot; para portabilidade e &quot;Excluir conta e todos os dados&quot; para
+eliminação (incluindo a cópia sincronizada, quando aplicável). O
+desenvolvedor não trata dados do titular fora do dispositivo do titular
+ou da própria conta Google/Apple do titular.</li>
+<li><strong>GDPR (Regulamento UE 2016/679)</strong>: para usuários no Espaço Econômico
+Europeu, a base legal de tratamento é a execução do próprio Aplicativo a
+pedido do usuário (art. 6(1)(b)), com processamento restrito ao
+dispositivo do usuário e, quando a sincronização é ativada por escolha
+do usuário, à conta de nuvem do próprio usuário (&quot;privacy by
+design/by default&quot;, art. 25) — nesse caso, Google/Apple processam
+apenas um blob cifrado, sem acesso ao conteúdo. Os direitos de acesso,
+retificação, apagamento e portabilidade (arts. 15–20) são exercidos
+localmente, pelas funções descritas acima.</li>
+<li><strong>CCPA/CPRA (Califórnia, EUA)</strong>: o desenvolvedor não vende nem
+compartilha informações pessoais. Os relatórios técnicos de erro
+enviados ao Sentry (Seção 2.5) não constituem venda ou compartilhamento
+de informação pessoal, pois não identificam o usuário.</li>
+</ul>
+<p>Caso deseje contato formal sobre esses direitos ainda assim, use o e-mail
+na Seção 12 — mas note que, por não haver dados do cofre no lado do
+desenvolvedor (inclusive quando sincronizados, já que ficam na conta do
+próprio usuário), não há registro remoto do conteúdo do cofre a ser
+consultado, corrigido ou apagado pelo desenvolvedor.</p>
+<h2>8. Menores de idade / COPPA</h2>
+<p>O SecPass não é direcionado a crianças, não possui conteúdo destinado a
+menores de 13 anos e não coleta intencionalmente (nem de forma alguma)
+dados de nenhum usuário, incluindo menores — em conformidade com o
+espírito da COPPA (EUA) e legislações equivalentes. Ainda assim, o uso do
+Aplicativo por menores deve seguir a legislação local aplicável e, quando
+exigido, supervisão de um responsável.</p>
+<h2>9. Segurança</h2>
+<p>Nenhum sistema é 100% invulnerável. O SecPass usa práticas reconhecidas de
+mercado (PBKDF2 com 600.000 iterações, AES-256-GCM, armazenamento seguro
+do sistema operacional, bloqueio progressivo contra tentativas de força
+bruta), mas isso não constitui garantia absoluta contra qualquer forma de
+acesso não autorizado ao seu dispositivo ou à sua conta Google/Apple,
+quando a sincronização estiver ativa.</p>
+<h2>10. Declarações para as lojas de aplicativos</h2>
+<p>Para preencher os formulários de privacidade exigidos na submissão, com
+base no funcionamento atual do Aplicativo:</p>
+<p><strong>Apple App Store — App Privacy (&quot;Nutrition Label&quot;)</strong>: declarar a categoria
+&quot;Diagnostics&quot; → &quot;Crash Data&quot; e &quot;Performance Data&quot; como coletada, com
+finalidade &quot;App Functionality&quot; e <strong>&quot;Data Not Linked to You&quot;</strong> (o Sentry
+está configurado sem PII). Quando a sincronização iCloud/Google Drive
+estiver habilitada no build submetido, também é necessário declarar
+&quot;User Content&quot; (ex.: &quot;Other User Content&quot;) com finalidade &quot;App
+Functionality&quot;, tipicamente como <strong>&quot;Data Linked to You&quot;</strong> mas <strong>não usada
+para rastreamento</strong> — mesmo sendo apenas um blob cifrado, a Apple pede
+essa declaração sempre que qualquer conteúdo do usuário é transmitido para
+fora do dispositivo, ainda que para a própria conta do usuário. Revisar
+esta seção com atenção antes de cada submissão, já que a categorização
+exata depende de qual(is) backend(s) de sincronização estão ativos no
+build.</p>
+<p><strong>Google Play — Data safety</strong>: declarar em &quot;App activity&quot; → &quot;Crash logs&quot; e
+&quot;Diagnostics&quot; como coletados, com finalidade &quot;App functionality&quot;, <strong>não
+compartilhados com terceiros para publicidade</strong>. Quando a sincronização
+com Google Drive estiver habilitada, declarar também os dados do &quot;cofre&quot;
+(credenciais) como coletados/processados com finalidade &quot;App
+functionality&quot;, marcando que os dados <strong>não são compartilhados com
+terceiros</strong> (o armazenamento é na própria conta Google do usuário, não em
+servidor do desenvolvedor) e como <strong>criptografados em trânsito e em
+repouso</strong>.</p>
+<blockquote>
+<p>Reavalie estas declarações sempre que adicionar qualquer outro SDK de
+terceiros, analytics, novo backend de sincronização ou qualquer outra
+comunicação de rede ao Aplicativo — elas deixam de ser válidas nesse
+momento. Esta seção reflete o entendimento do desenvolvedor, não
+orientação jurídica ou da Apple/Google — confirme a categorização exata
+diretamente nas ferramentas de submissão de cada loja.</p>
+</blockquote>
+<h2>11. Alterações a esta política</h2>
+<p>Esta política pode ser atualizada para refletir mudanças no Aplicativo. A
+data no topo deste documento indica a versão mais recente. Mudanças
+relevantes serão comunicadas nas notas de versão do Aplicativo.</p>
+<h2>12. Contato</h2>
+<p>Dúvidas sobre esta política podem ser enviadas para:
+<strong><a href="mailto:cortexistech@gmail.com">cortexistech@gmail.com</a></strong></p>
+
+<footer>SecPass &middot; Cortexis Tech &middot; <a href="mailto:cortexistech@gmail.com">cortexistech@gmail.com</a></footer>
+</div>
+</body>
+</html>
