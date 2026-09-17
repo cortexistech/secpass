@@ -9,15 +9,19 @@ const SECURE_STORE_OPTIONS = {
 
 export const SYNC_BACKEND_DRIVE = "drive";
 export const SYNC_BACKEND_ICLOUD = "icloud";
-const VALID_BACKENDS = [SYNC_BACKEND_DRIVE, SYNC_BACKEND_ICLOUD];
+export type SyncBackend = typeof SYNC_BACKEND_DRIVE | typeof SYNC_BACKEND_ICLOUD;
+const VALID_BACKENDS: SyncBackend[] = [SYNC_BACKEND_DRIVE, SYNC_BACKEND_ICLOUD];
 
-export const getSyncBackendPreference = async () => {
+const isValidBackend = (value: unknown): value is SyncBackend =>
+  VALID_BACKENDS.includes(value as SyncBackend);
+
+export const getSyncBackendPreference = async (): Promise<SyncBackend> => {
   try {
     const secureValue = await SecureStore.getItemAsync(
       PREFERENCE_KEY,
       SECURE_STORE_OPTIONS,
     );
-    if (VALID_BACKENDS.includes(secureValue)) {
+    if (isValidBackend(secureValue)) {
       return secureValue;
     }
   } catch {
@@ -25,13 +29,11 @@ export const getSyncBackendPreference = async () => {
   }
 
   const legacyValue = await AsyncStorage.getItem(PREFERENCE_KEY);
-  return VALID_BACKENDS.includes(legacyValue)
-    ? legacyValue
-    : SYNC_BACKEND_DRIVE;
+  return isValidBackend(legacyValue) ? legacyValue : SYNC_BACKEND_DRIVE;
 };
 
-export const setSyncBackendPreference = async (value) => {
-  if (!VALID_BACKENDS.includes(value)) {
+export const setSyncBackendPreference = async (value: string): Promise<void> => {
+  if (!isValidBackend(value)) {
     throw new Error("Backend de sincronizacao invalido.");
   }
 

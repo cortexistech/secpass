@@ -1,4 +1,7 @@
-export const constantTimeCompare = (left, right) => {
+// Compartilhado entre o app mobile (src/utils/constantTimeCompare.ts) e o
+// desktop (desktop/src/main/core/constantTimeCompare.js) - logica pura, sem
+// dependencia de plataforma, nada a adaptar.
+export const constantTimeCompare = (left: unknown, right: unknown): boolean => {
   if (typeof left !== "string" || typeof right !== "string") {
     return false;
   }

@@ -19,7 +19,29 @@ const ICON_SIZE = 18;
 
 const CLIPBOARD_CLEAR_MS = 30000;
 
-const defaultTheme = {
+export interface PasswordCardItem {
+  id: string;
+  title: string;
+  username: string;
+  password: string;
+}
+
+export interface PasswordCardTheme {
+  card: string;
+  border: string;
+  text: string;
+  textMuted: string;
+  accent: string;
+  accentSoft: string;
+  secondaryButton: string;
+  secondaryText: string;
+  dangerSoft: string;
+  dangerText: string;
+  successSoft: string;
+  successText: string;
+}
+
+const defaultTheme: PasswordCardTheme = {
   card: "#FFFFFF",
   border: "#D7E2F3",
   text: "#0E1B2E",
@@ -40,13 +62,24 @@ const MONO_FONT = Platform.select({
   default: "monospace",
 });
 
+export interface PasswordCardProps {
+  item: PasswordCardItem;
+  onDelete: (id: string) => void;
+  onUpdate: (
+    id: string,
+    updates: { title: string; username: string; password: string },
+  ) => void;
+  index?: number;
+  theme?: PasswordCardTheme;
+}
+
 function PasswordCard({
   item,
   onDelete,
   onUpdate,
   index = 0,
   theme = defaultTheme,
-}) {
+}: PasswordCardProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -54,7 +87,7 @@ function PasswordCard({
   const [editUsername, setEditUsername] = useState(item.username);
   const [editPassword, setEditPassword] = useState(item.password);
   const [appear] = useState(() => new Animated.Value(0));
-  const clipboardTimerRef = useRef(null);
+  const clipboardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     Animated.timing(appear, {
@@ -73,12 +106,12 @@ function PasswordCard({
     };
   }, []);
 
-  const authenticateSensitiveAction = async () => {
+  const authenticateSensitiveAction = async (): Promise<boolean> => {
     try {
       const authResult = await authenticateVaultAccess();
 
       if (!authResult.success) {
-        if (authResult.error === "user_cancel") {
+        if ("error" in authResult && authResult.error === "user_cancel") {
           return false;
         }
 

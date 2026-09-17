@@ -33,13 +33,14 @@ const GOOGLE_IOS_CLIENT_ID_FALLBACK =
   "114456559466-ko4p814or855id67eb000i5ipjojdtrr.apps.googleusercontent.com";
 
 let isConfigured = false;
-const ensureConfigured = () => {
+const ensureConfigured = (): void => {
   if (isConfigured) {
     return;
   }
 
   const iosClientId =
-    Constants.expoConfig?.extra?.googleIosClientId || GOOGLE_IOS_CLIENT_ID_FALLBACK;
+    (Constants.expoConfig?.extra?.googleIosClientId as string | undefined) ||
+    GOOGLE_IOS_CLIENT_ID_FALLBACK;
   try {
     GoogleSignin.configure({
       scopes: [DRIVE_APPDATA_SCOPE],
@@ -74,27 +75,35 @@ const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const EXPIRY_SAFETY_MARGIN_MS = 60_000;
 
-let androidCachedAccessToken = null; // { token, expiresAt }
+interface CachedAccessToken {
+  token: string;
+  expiresAt: number;
+}
 
-const base64url = (buffer) =>
+let androidCachedAccessToken: CachedAccessToken | null = null;
+
+// QuickCrypto.randomBytes/createHash(...).digest() devolvem um Buffer com
+// toString(encoding) (API do node:crypto), nao o Uint8Array.toString() sem
+// argumentos do lib padrao do TS - ver mesmo ajuste em shared/vaultCrypto.ts.
+const base64url = (buffer: { toString(encoding: string): string }): string =>
   buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 // RN/Hermes nao tem URL/URLSearchParams disponivel sem um polyfill que este
-// projeto nao instala (ver src/services/driveVaultModule.js, que ja
+// projeto nao instala (ver src/services/driveVaultModule.ts, que ja
 // constroi URLs por concatenacao de string pelo mesmo motivo) - por isso
 // as duas funcoes abaixo, em vez de `new URL(...)`/`new URLSearchParams(...)`.
-const toFormBody = (params) =>
+const toFormBody = (params: Record<string, string>): string =>
   Object.entries(params)
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
     .join("&");
 
-const parseQueryParams = (url) => {
+const parseQueryParams = (url: string): Record<string, string> => {
   const queryIndex = url.indexOf("?");
   if (queryIndex === -1) {
     return {};
   }
 
-  const params = {};
+  const params: Record<string, string> = {};
   for (const pair of url.slice(queryIndex + 1).split("&")) {
     if (!pair) continue;
     const [key, rawValue = ""] = pair.split("=");
@@ -103,7 +112,7 @@ const parseQueryParams = (url) => {
   return params;
 };
 
-const readAndroidRefreshToken = async () => {
+const readAndroidRefreshToken = async (): Promise<string | null> => {
   try {
     return await SecureStore.getItemAsync(ANDROID_REFRESH_TOKEN_KEY, ANDROID_SECURE_STORE_OPTIONS);
   } catch {
@@ -111,11 +120,11 @@ const readAndroidRefreshToken = async () => {
   }
 };
 
-const writeAndroidRefreshToken = async (token) => {
+const writeAndroidRefreshToken = async (token: string): Promise<void> => {
   await SecureStore.setItemAsync(ANDROID_REFRESH_TOKEN_KEY, token, ANDROID_SECURE_STORE_OPTIONS);
 };
 
-const deleteAndroidRefreshToken = async () => {
+const deleteAndroidRefreshToken = async (): Promise<void> => {
   try {
     await SecureStore.deleteItemAsync(ANDROID_REFRESH_TOKEN_KEY, ANDROID_SECURE_STORE_OPTIONS);
   } catch {
@@ -123,10 +132,15 @@ const deleteAndroidRefreshToken = async () => {
   }
 };
 
+export interface SignInResult {
+  success: boolean;
+  cancelled: boolean;
+}
+
 // Inicia o fluxo interativo (abre o navegador do sistema/Custom Tab). So
 // deve ser chamado a partir de uma acao explicita do usuario, mesmo
 // principio do fluxo nativo.
-const signInWithGoogleDriveAndroid = async () => {
+const signInWithGoogleDriveAndroid = async (): Promise<SignInResult> => {
   const codeVerifier = base64url(QuickCrypto.randomBytes(32));
   const codeChallenge = base64url(
     QuickCrypto.createHash("sha256").update(codeVerifier).digest(),
@@ -145,14 +159,14 @@ const signInWithGoogleDriveAndroid = async () => {
     code_challenge_method: "S256",
   })}`;
 
-  let result;
+  let result: WebBrowser.WebBrowserAuthSessionResult;
   try {
     result = await WebBrowser.openAuthSessionAsync(authUrl, ANDROID_REDIRECT_URI);
   } catch {
     throw new Error("Falha ao autenticar com o Google.");
   }
 
-  if (result.type !== "success" || !result.url) {
+  if (result.type !== "success" || !("url" in result) || !result.url) {
     return { success: false, cancelled: true };
   }
 
@@ -193,7 +207,9 @@ const signInWithGoogleDriveAndroid = async () => {
   return { success: true, cancelled: false };
 };
 
-const refreshAndroidAccessToken = async (refreshToken) => {
+const refreshAndroidAccessToken = async (
+  refreshToken: string,
+): Promise<{ access_token: string; expires_in?: number } | null> => {
   const response = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -210,7 +226,7 @@ const refreshAndroidAccessToken = async (refreshToken) => {
   return response.json();
 };
 
-const getValidAccessTokenAndroid = async () => {
+const getValidAccessTokenAndroid = async (): Promise<string | null> => {
   const refreshToken = await readAndroidRefreshToken();
   if (!refreshToken) {
     return null;
@@ -235,16 +251,17 @@ const getValidAccessTokenAndroid = async () => {
   return androidCachedAccessToken.token;
 };
 
-const isDriveSignedInAndroid = async () => Boolean(await readAndroidRefreshToken());
+const isDriveSignedInAndroid = async (): Promise<boolean> =>
+  Boolean(await readAndroidRefreshToken());
 
-const signOutDriveAndroid = async () => {
+const signOutDriveAndroid = async (): Promise<void> => {
   await deleteAndroidRefreshToken();
   androidCachedAccessToken = null;
 };
 
 // --- API publica, despachando por plataforma ---------------------------
 
-export const signInWithGoogleDrive = async () => {
+export const signInWithGoogleDrive = async (): Promise<SignInResult> => {
   if (Platform.OS === "android") {
     return signInWithGoogleDriveAndroid();
   }
@@ -268,7 +285,7 @@ export const signInWithGoogleDrive = async () => {
 // nunca autenticou ou se a sessao nao pode ser renovada (ex: usuario
 // revogou acesso na conta Google) - quem chama trata isso como "sync
 // indisponivel", nunca como erro fatal do cofre local.
-export const getValidAccessToken = async () => {
+export const getValidAccessToken = async (): Promise<string | null> => {
   if (Platform.OS === "android") {
     return getValidAccessTokenAndroid();
   }
@@ -287,7 +304,7 @@ export const getValidAccessToken = async () => {
   }
 };
 
-export const isDriveSignedIn = async () => {
+export const isDriveSignedIn = async (): Promise<boolean> => {
   if (Platform.OS === "android") {
     return isDriveSignedInAndroid();
   }
@@ -299,7 +316,7 @@ export const isDriveSignedIn = async () => {
   return GoogleSignin.hasPreviousSignIn();
 };
 
-export const signOutDrive = async () => {
+export const signOutDrive = async (): Promise<void> => {
   if (Platform.OS === "android") {
     await signOutDriveAndroid();
     return;

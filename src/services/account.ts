@@ -23,7 +23,32 @@ const DUMMY_SALT = "0123456789abcdef0123456789abcdef";
 const DUMMY_HASH =
   "0000000000000000000000000000000000000000000000000000000000000000";
 
-const parseAccount = (rawValue) => {
+interface AccountV1 {
+  email: string;
+  legacyPassword: string;
+  version: 1;
+}
+
+interface AccountV2 {
+  email: string;
+  salt: string;
+  passwordHash: string;
+  version: 2;
+}
+
+interface AccountV3 {
+  email: string;
+  salt: string;
+  passwordHash: string;
+  kdf: "pbkdf2";
+  iterations: number;
+  keySize: number;
+  version: 3;
+}
+
+type StoredAccount = AccountV1 | AccountV2 | AccountV3;
+
+const parseAccount = (rawValue: string | null): StoredAccount | null => {
   if (!rawValue) {
     return null;
   }
@@ -74,20 +99,24 @@ const parseAccount = (rawValue) => {
   }
 };
 
-const createSalt = () => {
+const createSalt = (): string => {
   const randomBytes = QuickCrypto.randomBytes(16);
   return Array.from(randomBytes, (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
 };
 
-const hashPasswordV2 = (password, salt) => {
+const hashPasswordV2 = (password: string, salt: string): string => {
   return QuickCrypto.createHash("sha256")
     .update(`${salt}:${password}`)
     .digest("hex");
 };
 
-const hashPasswordV3 = (password, salt, iterations = PBKDF2_ITERATIONS) => {
+const hashPasswordV3 = (
+  password: string,
+  salt: string,
+  iterations: number = PBKDF2_ITERATIONS,
+): string => {
   return QuickCrypto.pbkdf2Sync(
     password,
     salt,
@@ -102,7 +131,12 @@ const writeSecureAccount = async ({
   salt,
   passwordHash,
   version = ACCOUNT_VERSION,
-}) => {
+}: {
+  email: string;
+  salt: string;
+  passwordHash: string;
+  version?: number;
+}): Promise<"secure"> => {
   const isV3 = version === ACCOUNT_VERSION;
   const payload = JSON.stringify({
     email: email.trim().toLowerCase(),
@@ -129,8 +163,11 @@ const writeSecureAccount = async ({
   }
 };
 
-const getStoredAccount = async () => {
-  let secureAccount;
+const getStoredAccount = async (): Promise<{
+  account: StoredAccount;
+  source: "secure" | "legacy";
+} | null> => {
+  let secureAccount: string | null = null;
 
   try {
     secureAccount = await SecureStore.getItemAsync(
@@ -164,7 +201,13 @@ const getStoredAccount = async () => {
   };
 };
 
-export const saveLocalAccount = async ({ email, password }) => {
+export const saveLocalAccount = async ({
+  email,
+  password,
+}: {
+  email: string;
+  password: string;
+}): Promise<void> => {
   const salt = createSalt();
   const passwordHash = hashPasswordV3(password, salt);
 
@@ -174,7 +217,7 @@ export const saveLocalAccount = async ({ email, password }) => {
   }
 };
 
-export const loadLocalAccount = async () => {
+export const loadLocalAccount = async (): Promise<{ email: string } | null> => {
   const storedAccount = await getStoredAccount();
   if (!storedAccount) {
     return null;
@@ -217,7 +260,13 @@ export const loadLocalAccount = async () => {
   return { email: account.email };
 };
 
-export const verifyLocalAccount = async ({ email, password }) => {
+export const verifyLocalAccount = async ({
+  email,
+  password,
+}: {
+  email?: string;
+  password?: string;
+}): Promise<boolean> => {
   const normalizedEmail = (email || "").trim().toLowerCase();
 
   const storedAccount = await getStoredAccount();
@@ -253,7 +302,7 @@ export const verifyLocalAccount = async ({ email, password }) => {
     const isValid = isEmailValid && isHashValidV2;
     if (isValid) {
       try {
-        await saveLocalAccount({ email: normalizedEmail, password });
+        await saveLocalAccount({ email: normalizedEmail, password: password || "" });
       } catch {
         // Login continua valido mesmo sem concluir promocao para v3.
       }
@@ -278,7 +327,7 @@ export const verifyLocalAccount = async ({ email, password }) => {
 
   if (isValid && storedIterations < PBKDF2_ITERATIONS) {
     try {
-      await saveLocalAccount({ email: normalizedEmail, password });
+      await saveLocalAccount({ email: normalizedEmail, password: password || "" });
     } catch {
       // Login continua valido com as iteracoes antigas; promocao tenta de novo depois.
     }
@@ -287,7 +336,7 @@ export const verifyLocalAccount = async ({ email, password }) => {
   return isValid;
 };
 
-export const deleteLocalAccount = async () => {
+export const deleteLocalAccount = async (): Promise<void> => {
   try {
     await SecureStore.deleteItemAsync(ACCOUNT_KEY, SECURE_STORE_OPTIONS);
   } catch {

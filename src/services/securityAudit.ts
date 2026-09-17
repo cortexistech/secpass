@@ -14,7 +14,17 @@ const SECURE_STORE_OPTIONS = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
 
-const parseEvents = (rawValue) => {
+export interface SecurityEvent {
+  id: string;
+  type: string;
+  status: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export type SecurityLogIntegrity = "ok" | "tampered" | "inconclusive";
+
+const parseEvents = (rawValue: string | null): SecurityEvent[] => {
   if (!rawValue) {
     return [];
   }
@@ -27,7 +37,7 @@ const parseEvents = (rawValue) => {
   }
 };
 
-export const loadSecurityEvents = async () => {
+export const loadSecurityEvents = async (): Promise<SecurityEvent[]> => {
   try {
     const secureValue = await SecureStore.getItemAsync(
       AUDIT_KEY,
@@ -63,7 +73,11 @@ export const logSecurityEvent = async ({
   type,
   status = "info",
   details = {},
-}) => {
+}: {
+  type: string;
+  status?: string;
+  details?: Record<string, unknown>;
+}): Promise<void> => {
   const events = await loadSecurityEvents();
   const nextEvents = [
     {
@@ -88,7 +102,7 @@ export const logSecurityEvent = async ({
   }
 };
 
-export const clearSecurityEvents = async () => {
+export const clearSecurityEvents = async (): Promise<void> => {
   try {
     await SecureStore.deleteItemAsync(AUDIT_KEY, SECURE_STORE_OPTIONS);
   } catch {
@@ -124,7 +138,7 @@ export const clearSecurityEvents = async () => {
 // entradas antigas demais foram descartadas por causa do limite antes da
 // proxima verificacao, o selo fica inconclusivo (nao da pra confirmar nem
 // desmentir), em vez de soar falso alarme.
-const canonicalizeEvent = (event) =>
+const canonicalizeEvent = (event: Partial<SecurityEvent>): string =>
   JSON.stringify({
     id: event?.id ?? null,
     type: event?.type ?? null,
@@ -133,21 +147,27 @@ const canonicalizeEvent = (event) =>
     createdAt: event?.createdAt ?? null,
   });
 
-const sha256Hex = (value) =>
-  QuickCrypto.createHash("sha256").update(value, "utf8").digest("hex");
+// Sem o 2o argumento de encoding: QuickCrypto.Hash.update(data, encoding)
+// tem um overload que devolve o digest direto como Buffer (atalho "one-
+// shot"), quebrando o encadeamento com .digest() - string ja usa utf8 por
+// padrao (ver doc de update() em node_modules/react-native-quick-crypto),
+// entao omitir o encoding aqui mantem o mesmo resultado e o tipo Hash
+// encadeavel.
+const sha256Hex = (value: string): string =>
+  QuickCrypto.createHash("sha256").update(value).digest("hex");
 
-const hmacHex = (key, value) =>
+const hmacHex = (key: string, value: string): string =>
   QuickCrypto.createHmac("sha256", key).update(value, "utf8").digest("hex");
 
 // Deriva uma chave dedicada ao selo a partir da senha mestra - nunca reusa
 // vaultSecret cru como chave em mais de um lugar (mesmo padrao de
 // separacao de dominio usado no resto do app).
-const deriveSealKey = (vaultSecret) =>
+const deriveSealKey = (vaultSecret: string): string =>
   hmacHex(vaultSecret, "secpass-audit-seal-key-v1");
 
 // Encadeia do evento mais antigo para o mais novo (a lista em disco fica
 // mais-novo-primeiro; inverte antes de calcular).
-const computeChainHash = (eventsOldestFirst) => {
+const computeChainHash = (eventsOldestFirst: SecurityEvent[]): string => {
   let hash = "0".repeat(64);
   for (const event of eventsOldestFirst) {
     hash = sha256Hex(hash + canonicalizeEvent(event));
@@ -155,7 +175,14 @@ const computeChainHash = (eventsOldestFirst) => {
   return hash;
 };
 
-const loadSeal = async () => {
+interface SecurityLogSeal {
+  hash: string;
+  mac: string;
+  count: number;
+  boundaryId?: string | null;
+}
+
+const loadSeal = async (): Promise<SecurityLogSeal | null> => {
   try {
     const raw = await SecureStore.getItemAsync(
       AUDIT_SEAL_KEY,
@@ -182,7 +209,7 @@ const loadSeal = async () => {
 // esta disponivel nesse momento) - "fecha" a integridade de tudo que foi
 // registrado ate agora, inclusive eventos de login que aconteceram antes
 // deste desbloqueio (ex: tentativas falhas anteriores).
-export const sealSecurityLog = async (vaultSecret) => {
+export const sealSecurityLog = async (vaultSecret: string): Promise<void> => {
   if (!vaultSecret) {
     return;
   }
@@ -223,7 +250,9 @@ export const sealSecurityLog = async (vaultSecret) => {
 // historico). "inconclusive" e deliberadamente distinto de "tampered":
 // remocao de eventos desalinha a lista e por si so nao prova adulteracao
 // (poderia ser so o limite de retencao normal), entao nao vira alarme.
-export const verifySecurityLogIntegrity = async (vaultSecret) => {
+export const verifySecurityLogIntegrity = async (
+  vaultSecret: string,
+): Promise<SecurityLogIntegrity> => {
   if (!vaultSecret) {
     return "inconclusive";
   }

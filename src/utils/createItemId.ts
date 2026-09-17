@@ -1,9 +1,9 @@
 import QuickCrypto from "react-native-quick-crypto";
 
-const bytesToHex = (bytes) =>
+const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
-export const createItemId = () => {
+export const createItemId = (): string => {
   const bytes = QuickCrypto.randomBytes(16);
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;

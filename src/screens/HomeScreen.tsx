@@ -32,7 +32,7 @@ import { StorageAccessFramework } from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
 import PasswordForm from "../components/PasswordForm";
-import PasswordCard from "../components/PasswordCard";
+import PasswordCard, { type PasswordCardItem } from "../components/PasswordCard";
 import SearchBar from "../components/SearchBar";
 import BrandLogo from "../components/BrandLogo";
 import CortexisCredit from "../components/CortexisCredit";
@@ -89,6 +89,7 @@ import {
   createVaultSecret,
   decryptVaultEnvelope,
   encryptVaultItems,
+  type VaultItem,
 } from "../services/vaultCrypto";
 import {
   clearLoginGuard,
@@ -101,15 +102,21 @@ import {
   logSecurityEvent,
   sealSecurityLog,
   verifySecurityLogIntegrity,
+  type SecurityEvent,
 } from "../services/securityAudit";
 import { generatePassword } from "../utils/passwordGenerator";
 import { DEVICE_AUTH_NOT_CONFIGURED } from "../utils/secureStoreErrors";
+
+type ThemePreference = "light" | "dark" | "system";
+
+const errorMessage = (err: unknown): string | undefined =>
+  err instanceof Error ? err.message : undefined;
 
 const DEVICE_AUTH_NOT_CONFIGURED_MESSAGE =
   "Este aparelho nao tem senha, Face ID ou Touch ID configurado. Ative um metodo de bloqueio de tela nos Ajustes do sistema para usar o SecPass.";
 const IDLE_LOCK_MS = 2 * 60 * 1000;
 const THEME_PREFERENCE_KEY = "secpass_theme_preference";
-const SECURITY_EVENT_LABELS = {
+const SECURITY_EVENT_LABELS: Record<string, string> = {
   login_success: "Login bem-sucedido",
   login_failed: "Tentativa de login com senha incorreta",
   login_blocked: "Login bloqueado (bloqueio ativo)",
@@ -130,8 +137,9 @@ const SECURITY_EVENT_LABELS = {
   audit_log_tampered: "Historico de seguranca pode ter sido adulterado",
   remote_vault_confirmation_shown: "Confirmacao de cofre remoto exibida",
 };
-const formatSecurityEventType = (type) => SECURITY_EVENT_LABELS[type] || type;
-const formatSecurityEventDate = (isoString) => {
+const formatSecurityEventType = (type: string): string =>
+  SECURITY_EVENT_LABELS[type] || type;
+const formatSecurityEventDate = (isoString: string): string => {
   try {
     return new Date(isoString).toLocaleString("pt-BR");
   } catch {
@@ -195,7 +203,8 @@ const REMOTE_VAULT_ACCOUNT_LABEL = "conta Google";
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
-  const [themePreference, setThemePreference] = useState("system");
+  const [themePreference, setThemePreference] =
+    useState<ThemePreference>("system");
   const isDark =
     themePreference === "dark" ||
     (themePreference === "system" && colorScheme === "dark");
@@ -205,7 +214,7 @@ export default function HomeScreen() {
   // sistema) era redundante na pratica.
   const oppositeOfSystemTheme = colorScheme === "dark" ? "light" : "dark";
 
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState<VaultItem[]>([]);
   const [title, setTitle] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -240,14 +249,14 @@ export default function HomeScreen() {
   const [importText, setImportText] = useState("");
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isSecurityLogVisible, setIsSecurityLogVisible] = useState(false);
-  const [securityEvents, setSecurityEvents] = useState([]);
+  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [isLoadingSecurityLog, setIsLoadingSecurityLog] = useState(false);
-  const [syncBackendPreference, setSyncBackendPreference] = useState(
+  const [syncBackendPreference, setSyncBackendPreference] = useState<string>(
     SYNC_BACKEND_DRIVE,
   );
   const [isSyncBackendBusy, setIsSyncBackendBusy] = useState(false);
 
-  const idleTimerRef = useRef(null);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextPersistRef = useRef(false);
   const wasBackgroundedRef = useRef(false);
   const needsVaultReloadRef = useRef(false);
@@ -255,14 +264,18 @@ export default function HomeScreen() {
   useEffect(() => {
     AsyncStorage.getItem(THEME_PREFERENCE_KEY)
       .then((preference) => {
-        if (["light", "dark", "system"].includes(preference)) {
+        if (
+          preference === "light" ||
+          preference === "dark" ||
+          preference === "system"
+        ) {
           setThemePreference(preference);
         }
       })
       .catch(() => {});
   }, []);
 
-  const chooseTheme = (preference) => {
+  const chooseTheme = (preference: ThemePreference) => {
     setThemePreference(preference);
     AsyncStorage.setItem(THEME_PREFERENCE_KEY, preference).catch(() => {});
   };
@@ -292,7 +305,7 @@ export default function HomeScreen() {
   }, [isLoggedIn, isAppUnlocked, lockVault]);
 
   const reloadVaultFromStorage = useCallback(
-    async (secret = vaultSecret) => {
+    async (secret: string = vaultSecret) => {
       if (!secret) return;
       const loadedItems = await loadPasswords({ vaultSecret: secret });
       setItems(loadedItems);
@@ -326,7 +339,7 @@ export default function HomeScreen() {
   }, [isDriveSyncActive, pullRemoteVaultUpdates]);
 
   const requestAppUnlock = useCallback(
-    async (secretOverride) => {
+    async (secretOverride?: string) => {
       setIsAuthenticating(true);
       setAuthMessage("");
       try {
@@ -366,7 +379,7 @@ export default function HomeScreen() {
           .then(() => sealSecurityLog(effectiveSecret))
           .catch(() => {});
       } catch (err) {
-        setAuthMessage(err?.message || "Falha ao iniciar autenticacao.");
+        setAuthMessage(errorMessage(err) || "Falha ao iniciar autenticacao.");
         setIsAppUnlocked(false);
       } finally {
         setIsAuthenticating(false);
@@ -537,7 +550,7 @@ export default function HomeScreen() {
       } catch (err) {
         Alert.alert(
           "Falha de seguranca",
-          err?.message === DEVICE_AUTH_NOT_CONFIGURED
+          errorMessage(err) === DEVICE_AUTH_NOT_CONFIGURED
             ? DEVICE_AUTH_NOT_CONFIGURED_MESSAGE
             : "Nao foi possivel salvar o cofre com seguranca neste dispositivo.",
         );
@@ -573,7 +586,7 @@ export default function HomeScreen() {
   };
 
   const removePassword = useCallback(
-    (id) => {
+    (id: string) => {
       registerUserActivity();
       setItems((prevItems) =>
         prevItems.map((item) =>
@@ -585,7 +598,10 @@ export default function HomeScreen() {
   );
 
   const updatePassword = useCallback(
-    (id, payload) => {
+    (
+      id: string,
+      payload: { title: string; username: string; password: string },
+    ) => {
       registerUserActivity();
       setItems((prevItems) =>
         prevItems.map((item) =>
@@ -608,8 +624,8 @@ export default function HomeScreen() {
     const normalizedSearch = search.toLowerCase();
     return visibleItems.filter(
       (item) =>
-        item.title.toLowerCase().includes(normalizedSearch) ||
-        item.username.toLowerCase().includes(normalizedSearch),
+        (item.title || "").toLowerCase().includes(normalizedSearch) ||
+        (item.username || "").toLowerCase().includes(normalizedSearch),
     );
   }, [visibleItems, search]);
 
@@ -884,7 +900,7 @@ export default function HomeScreen() {
       });
     } catch (err) {
       setLoginMessage(
-        err?.message === DEVICE_AUTH_NOT_CONFIGURED
+        errorMessage(err) === DEVICE_AUTH_NOT_CONFIGURED
           ? DEVICE_AUTH_NOT_CONFIGURED_MESSAGE
           : "Nao foi possivel salvar a conta com seguranca neste dispositivo.",
       );
@@ -1194,7 +1210,7 @@ export default function HomeScreen() {
             } catch (err) {
               Alert.alert(
                 "Falha ao ativar sincronizacao",
-                err?.message || "Tente novamente.",
+                errorMessage(err) || "Tente novamente.",
               );
               logSecurityEvent({
                 type: "sync_error",
@@ -1236,7 +1252,7 @@ export default function HomeScreen() {
   // "preferencia trocada mas dados nao copiados". A preferencia e local
   // deste aparelho, entao avisamos explicitamente que a troca precisa ser
   // repetida em todos os outros aparelhos que compartilham o cofre.
-  const handleSelectSyncBackend = (newBackend) => {
+  const handleSelectSyncBackend = (newBackend: string) => {
     if (newBackend === syncBackendPreference || isSyncBackendBusy) {
       return;
     }
@@ -1281,9 +1297,9 @@ export default function HomeScreen() {
             } catch (err) {
               Alert.alert(
                 "Falha ao trocar backend",
-                err?.message === SYNC_BACKEND_UNAVAILABLE
+                errorMessage(err) === SYNC_BACKEND_UNAVAILABLE
                   ? "Esse backend nao esta disponivel neste aparelho."
-                  : err?.message || "Tente novamente.",
+                  : errorMessage(err) || "Tente novamente.",
               );
             } finally {
               setIsSyncBackendBusy(false);
@@ -1300,7 +1316,7 @@ export default function HomeScreen() {
   // "Escolher backend" so trocava a preferencia, e um botao a parte "
   // Sincronizar com Google Drive" fazia login) o que confundia sobre qual
   // tocar pra realmente ativar a sincronizacao.
-  const handleSyncOptionPress = (backend) => {
+  const handleSyncOptionPress = (backend: string) => {
     if (backend !== syncBackendPreference) {
       handleSelectSyncBackend(backend);
       return;
@@ -1347,7 +1363,7 @@ export default function HomeScreen() {
       }
     } catch (err) {
       setLoginMessage(
-        err?.message || "Falha ao conectar com o Google Drive.",
+        errorMessage(err) || "Falha ao conectar com o Google Drive.",
       );
     } finally {
       setIsAuthSubmitting(false);
@@ -1404,7 +1420,7 @@ export default function HomeScreen() {
             } catch (err) {
               Alert.alert(
                 "Falha ao excluir",
-                err?.message === VAULT_DELETE_ERROR
+                errorMessage(err) === VAULT_DELETE_ERROR
                   ? VAULT_DELETE_ERROR
                   : "Nao foi possivel apagar a conta e o cofre. Tente novamente.",
               );
@@ -2158,7 +2174,7 @@ export default function HomeScreen() {
           }
           renderItem={({ item, index }) => (
             <PasswordCard
-              item={item}
+              item={item as unknown as PasswordCardItem}
               onDelete={removePassword}
               onUpdate={updatePassword}
               index={index}

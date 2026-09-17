@@ -1,12 +1,13 @@
 // Backend de sincronizacao via Google Drive (appDataFolder), com o mesmo
 // contrato que modules/secure-vault-cloudkit expoe no iOS (ver
-// src/services/storage.js): getAccountStatusAsync, fetchVaultMetaAsync,
+// src/services/storage.ts): getAccountStatusAsync, fetchVaultMetaAsync,
 // saveVaultMetaAsync, fetchCredentialsAsync, upsertCredentialsAsync,
 // deleteVaultAsync. O Drive so guarda ciphertext - os dois arquivos
 // (vault_meta.json e credentials.json) tem o mesmo formato que ja e
 // persistido hoje no CloudKit, so o transporte muda.
 import { mergeVaultItems } from "./vaultMerge";
 import { getValidAccessToken } from "./driveAuth";
+import type { VaultItem } from "./vaultCrypto";
 
 const DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files";
@@ -14,7 +15,19 @@ const DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files";
 const VAULT_META_FILE = "vault_meta.json";
 const CREDENTIALS_FILE = "credentials.json";
 
-const authorizedFetch = async (url, options = {}) => {
+export interface RemoteVaultRecord {
+  id: string;
+  envelope: string;
+  updatedAt: number;
+  tombstone: boolean;
+}
+
+export type RemoteVaultAccountStatus = "available" | "unavailable";
+
+const authorizedFetch = async (
+  url: string,
+  options: RequestInit = {},
+): Promise<Response> => {
   const accessToken = await getValidAccessToken();
   if (!accessToken) {
     throw new Error("Sincronizacao com Google Drive nao autenticada.");
@@ -23,7 +36,7 @@ const authorizedFetch = async (url, options = {}) => {
   const response = await fetch(url, {
     ...options,
     headers: {
-      ...(options.headers || {}),
+      ...((options.headers as Record<string, string>) || {}),
       Authorization: `Bearer ${accessToken}`,
     },
   });
@@ -35,7 +48,7 @@ const authorizedFetch = async (url, options = {}) => {
   return response;
 };
 
-const findFileId = async (name) => {
+const findFileId = async (name: string): Promise<string | null> => {
   const query = encodeURIComponent(`name = '${name}' and trashed = false`);
   const url = `${DRIVE_FILES_URL}?spaces=appDataFolder&q=${query}&fields=files(id,name)`;
   const response = await authorizedFetch(url);
@@ -43,7 +56,7 @@ const findFileId = async (name) => {
   return data?.files?.[0]?.id || null;
 };
 
-const readJsonFile = async (name) => {
+const readJsonFile = async (name: string): Promise<unknown> => {
   const fileId = await findFileId(name);
   if (!fileId) {
     return null;
@@ -58,7 +71,7 @@ const readJsonFile = async (name) => {
   }
 };
 
-const createJsonFile = async (name, value) => {
+const createJsonFile = async (name: string, value: unknown): Promise<void> => {
   const boundary = "secpass-vault-sync-boundary";
   const metadata = JSON.stringify({ name, parents: ["appDataFolder"] });
   const body =
@@ -77,7 +90,7 @@ const createJsonFile = async (name, value) => {
   });
 };
 
-const updateJsonFile = async (fileId, value) => {
+const updateJsonFile = async (fileId: string, value: unknown): Promise<void> => {
   await authorizedFetch(`${DRIVE_UPLOAD_URL}/${fileId}?uploadType=media`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -85,7 +98,7 @@ const updateJsonFile = async (fileId, value) => {
   });
 };
 
-const writeJsonFile = async (name, value) => {
+const writeJsonFile = async (name: string, value: unknown): Promise<void> => {
   const fileId = await findFileId(name);
   if (fileId) {
     await updateJsonFile(fileId, value);
@@ -94,7 +107,7 @@ const writeJsonFile = async (name, value) => {
   }
 };
 
-const deleteFileIfExists = async (name) => {
+const deleteFileIfExists = async (name: string): Promise<void> => {
   const fileId = await findFileId(name);
   if (!fileId) {
     return;
@@ -102,16 +115,17 @@ const deleteFileIfExists = async (name) => {
   await authorizedFetch(`${DRIVE_FILES_URL}/${fileId}`, { method: "DELETE" });
 };
 
-const getAccountStatusAsync = async () => {
+const getAccountStatusAsync = async (): Promise<RemoteVaultAccountStatus> => {
   const accessToken = await getValidAccessToken();
   return accessToken ? "available" : "unavailable";
 };
 
-const fetchVaultMetaAsync = async () => readJsonFile(VAULT_META_FILE);
+const fetchVaultMetaAsync = async (): Promise<unknown> => readJsonFile(VAULT_META_FILE);
 
-const saveVaultMetaAsync = async (meta) => writeJsonFile(VAULT_META_FILE, meta);
+const saveVaultMetaAsync = async (meta: unknown): Promise<void> =>
+  writeJsonFile(VAULT_META_FILE, meta);
 
-const fetchCredentialsAsync = async () => {
+const fetchCredentialsAsync = async (): Promise<RemoteVaultRecord[]> => {
   const records = await readJsonFile(CREDENTIALS_FILE);
   return Array.isArray(records) ? records : [];
 };
@@ -119,15 +133,18 @@ const fetchCredentialsAsync = async () => {
 // Read-modify-write num unico arquivo: mais simples que um arquivo por
 // credencial (como o CloudKit faz com records nativos) e suficiente pra um
 // numero pequeno de aparelhos por usuario. O merge por item (updatedAt /
-// tombstone) e o mesmo de src/services/vaultMerge.js, que ja opera nos
+// tombstone) e o mesmo de src/services/vaultMerge.ts, que ja opera nos
 // campos externos do record sem precisar decifrar o envelope.
-const upsertCredentialsAsync = async (records) => {
+const upsertCredentialsAsync = async (records: RemoteVaultRecord[]): Promise<void> => {
   const current = await fetchCredentialsAsync();
-  const merged = mergeVaultItems(current, records);
+  const merged = mergeVaultItems(
+    current as unknown as VaultItem[],
+    records as unknown as VaultItem[],
+  );
   await writeJsonFile(CREDENTIALS_FILE, merged);
 };
 
-const deleteVaultAsync = async () => {
+const deleteVaultAsync = async (): Promise<void> => {
   await deleteFileIfExists(VAULT_META_FILE);
   await deleteFileIfExists(CREDENTIALS_FILE);
 };

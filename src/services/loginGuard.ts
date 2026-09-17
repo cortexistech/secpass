@@ -7,7 +7,13 @@ const SECURE_STORE_OPTIONS = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
 
-const parseGuard = (rawValue) => {
+export interface LoginGuardState {
+  failedAttempts: number;
+  lockLevel: number;
+  lockUntil: number;
+}
+
+const parseGuard = (rawValue: string | null): LoginGuardState | null => {
   if (!rawValue) {
     return null;
   }
@@ -25,7 +31,7 @@ const parseGuard = (rawValue) => {
   }
 };
 
-export const loadLoginGuard = async () => {
+export const loadLoginGuard = async (): Promise<LoginGuardState | null> => {
   try {
     const secureValue = await SecureStore.getItemAsync(
       LOGIN_GUARD_KEY,
@@ -65,7 +71,7 @@ export const saveLoginGuard = async ({
   failedAttempts,
   lockLevel,
   lockUntil,
-}) => {
+}: LoginGuardState): Promise<void> => {
   const payload = JSON.stringify({
     failedAttempts,
     lockLevel,
@@ -84,7 +90,7 @@ export const saveLoginGuard = async ({
   }
 };
 
-export const clearLoginGuard = async () => {
+export const clearLoginGuard = async (): Promise<void> => {
   try {
     await SecureStore.deleteItemAsync(LOGIN_GUARD_KEY, SECURE_STORE_OPTIONS);
   } catch {

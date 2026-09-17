@@ -9,6 +9,10 @@ import {
   encryptVaultItem,
   encryptVaultItems,
   unlockVaultKeys,
+  type EncryptedVaultEnvelope,
+  type VaultItem,
+  type VaultItemRevision,
+  type VaultMeta,
 } from "./vaultCrypto";
 import { mergeVaultItems } from "./vaultMerge";
 import { isDriveSignedIn, signOutDrive } from "./driveAuth";
@@ -21,6 +25,7 @@ import {
   isDeviceAuthNotConfiguredError,
 } from "../utils/secureStoreErrors";
 import { logSecurityEvent } from "./securityAudit";
+import type { RemoteVaultAccountStatus, RemoteVaultRecord } from "./driveVaultModule";
 
 const KEY = "passwords";
 const STORAGE_WRITE_ERROR =
@@ -36,7 +41,16 @@ const SECURE_STORE_OPTIONS = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
 
-const getCloudKitModule = () => {
+export interface RemoteVaultModule {
+  getAccountStatusAsync(): Promise<RemoteVaultAccountStatus>;
+  fetchVaultMetaAsync(): Promise<unknown>;
+  saveVaultMetaAsync(meta: unknown): Promise<void>;
+  fetchCredentialsAsync(): Promise<RemoteVaultRecord[]>;
+  upsertCredentialsAsync(records: RemoteVaultRecord[]): Promise<void>;
+  deleteVaultAsync(): Promise<void>;
+}
+
+const getCloudKitModule = (): RemoteVaultModule | null => {
   if (Platform.OS !== "ios") {
     return null;
   }
@@ -51,11 +65,11 @@ const getCloudKitModule = () => {
 
 // So retorna o modulo Drive se ja houver sessao Google autenticada: sem
 // login explicito do usuario nao ha "sync habilitado" (ver
-// src/services/driveAuth.js - login e sempre uma acao explicita, nunca
+// src/services/driveAuth.ts - login e sempre uma acao explicita, nunca
 // automatica no boot). Disponivel tanto no Android quanto no iOS - e o
 // mecanismo que permite Mac, iPhone e Android compartilharem o mesmo cofre
 // com a mesma conta Google, sem depender de CloudKit (exclusivo Apple).
-const getDriveVaultModule = async () => {
+const getDriveVaultModule = async (): Promise<RemoteVaultModule | null> => {
   try {
     const signedIn = await isDriveSignedIn();
     if (!signedIn) {
@@ -68,7 +82,7 @@ const getDriveVaultModule = async () => {
 };
 
 // Ponto unico de despacho do backend remoto: qual dos dois usar e uma
-// escolha explicita do usuario (ver src/services/syncPreference.js), nao
+// escolha explicita do usuario (ver src/services/syncPreference.ts), nao
 // mais um fallback automatico. Drive e o mecanismo hibrido (Android + iOS +
 // Mac, mesma conta Google); CloudKit e exclusivo Apple (so iPhone e Mac).
 // Retornar null aqui e um estado normal ("sync desativado/indisponivel
@@ -76,7 +90,7 @@ const getDriveVaultModule = async () => {
 // responsabilidade da UI (ver peekRemoteVault), nao deste ponto de
 // despacho, pra nao quebrar o invariante de que salvar/carregar local
 // nunca falha por causa do backend remoto escolhido.
-const getRemoteVaultModule = async () => {
+const getRemoteVaultModule = async (): Promise<RemoteVaultModule | null> => {
   const preference = await getSyncBackendPreference();
 
   if (preference === SYNC_BACKEND_ICLOUD) {
@@ -86,8 +100,13 @@ const getRemoteVaultModule = async () => {
   return getDriveVaultModule();
 };
 
+interface LegacyKeychainSyncModule {
+  getItemAsync(key: string, keychainService: string): Promise<string | null>;
+  deleteItemAsync(key: string, keychainService: string): Promise<void>;
+}
+
 // Legado: blob unico no iCloud Keychain, usado so para migrar para CloudKit.
-const getLegacyKeychainSyncModule = () => {
+const getLegacyKeychainSyncModule = (): LegacyKeychainSyncModule | null => {
   if (Platform.OS !== "ios") {
     return null;
   }
@@ -100,9 +119,10 @@ const getLegacyKeychainSyncModule = () => {
   }
 };
 
-const isEncryptedEnvelope = (parsed) => parsed?.type === "encrypted_vault";
+const isEncryptedEnvelope = (parsed: unknown): parsed is EncryptedVaultEnvelope =>
+  (parsed as { type?: string })?.type === "encrypted_vault";
 
-const writeLocalVault = async (payload) => {
+const writeLocalVault = async (payload: string): Promise<void> => {
   await SecureStore.setItemAsync(KEY, payload, SECURE_STORE_OPTIONS);
 };
 
@@ -113,7 +133,7 @@ const writeLocalVault = async (payload) => {
 // aparelho ainda encontra o blob antigo em SecureStore e tenta decifra-lo
 // com o vaultSecret da conta NOVA, falhando com "Falha de integridade do
 // cofre." (mesmo bug ja corrigido no app desktop, ver account:resetLocalAccess).
-export const clearLocalVaultCache = async () => {
+export const clearLocalVaultCache = async (): Promise<void> => {
   try {
     await SecureStore.deleteItemAsync(KEY, SECURE_STORE_OPTIONS);
   } catch {
@@ -122,7 +142,7 @@ export const clearLocalVaultCache = async () => {
   await AsyncStorage.removeItem(KEY);
 };
 
-const readLegacyKeychainVault = async () => {
+const readLegacyKeychainVault = async (): Promise<string | null> => {
   const vaultSync = getLegacyKeychainSyncModule();
   if (!vaultSync) {
     return null;
@@ -143,7 +163,7 @@ const readLegacyKeychainVault = async () => {
 // isso importa de verdade: silenciar essa falha ali faria o app reportar
 // exclusao total quando o blob cifrado do cofre legado pode continuar
 // retido no circulo de iCloud Keychain do usuario.
-const deleteLegacyKeychainVault = async () => {
+const deleteLegacyKeychainVault = async (): Promise<boolean> => {
   const vaultSync = getLegacyKeychainSyncModule();
   if (!vaultSync) {
     return true;
@@ -160,7 +180,7 @@ const deleteLegacyKeychainVault = async () => {
   }
 };
 
-const parseData = (rawValue) => {
+const parseData = (rawValue: string | null): VaultItem[] => {
   if (!rawValue) return [];
 
   try {
@@ -171,7 +191,7 @@ const parseData = (rawValue) => {
   }
 };
 
-const parsePayload = (rawValue) => {
+const parsePayload = (rawValue: string | null | undefined): unknown => {
   if (!rawValue) {
     return null;
   }
@@ -183,32 +203,38 @@ const parsePayload = (rawValue) => {
   }
 };
 
-const encryptPayload = async (items, vaultSecret) =>
+const encryptPayload = async (items: VaultItem[], vaultSecret: string): Promise<string> =>
   JSON.stringify(await encryptVaultItems(items, vaultSecret));
 
-const toMetaShape = (rawMeta) => {
+const toMetaShape = (rawMeta: unknown): VaultMeta | null => {
   if (!rawMeta) {
     return null;
   }
 
-  if (rawMeta.kdf?.salt) {
-    return rawMeta;
+  const meta = rawMeta as Record<string, unknown>;
+  const kdf = meta.kdf as Record<string, unknown> | undefined;
+
+  if (kdf?.salt) {
+    return rawMeta as VaultMeta;
   }
 
   return {
     type: "vault_meta",
-    version: rawMeta.version || 1,
-    email: rawMeta.email || "",
+    version: (meta.version as number) || 1,
+    email: (meta.email as string) || "",
     kdf: {
-      name: rawMeta.kdfName || "pbkdf2-sha256",
-      iterations: rawMeta.iterations || 310000,
-      salt: rawMeta.salt || "",
+      name: (meta.kdfName as string) || "pbkdf2-sha256",
+      iterations: (meta.iterations as number) || 310000,
+      salt: (meta.salt as string) || "",
     },
-    verifier: rawMeta.verifier || "",
+    verifier: (meta.verifier as string) || "",
   };
 };
 
-const parseLoadedData = async (rawValue, vaultSecret) => {
+const parseLoadedData = async (
+  rawValue: string | null,
+  vaultSecret?: string,
+): Promise<VaultItem[]> => {
   const parsedPayload = parsePayload(rawValue);
 
   if (Array.isArray(parsedPayload)) {
@@ -232,8 +258,11 @@ const parseLoadedData = async (rawValue, vaultSecret) => {
 // (ver unlockVaultKeys, chamado antes desta funcao) deve propagar e travar
 // o load: isso sim significa "senha errada para este cofre", nao "um item
 // especifico esta corrompido".
-const decryptRemoteVaultItems = (records, keys) => {
-  const items = [];
+const decryptRemoteVaultItems = (
+  records: RemoteVaultRecord[],
+  keys: ReturnType<typeof unlockVaultKeys>,
+): VaultItem[] => {
+  const items: VaultItem[] = [];
 
   for (const record of Array.isArray(records) ? records : []) {
     try {
@@ -241,11 +270,11 @@ const decryptRemoteVaultItems = (records, keys) => {
         typeof record?.envelope === "string"
           ? parsePayload(record.envelope)
           : record?.envelope;
-      const revision = {
+      const revision: VaultItemRevision = {
         revisionAt: Number(record?.updatedAt || 0),
         tombstone: Boolean(record?.tombstone),
       };
-      items.push(decryptVaultItem(envelope, keys, revision));
+      items.push(decryptVaultItem(envelope as never, keys, revision));
     } catch {
       // Item individual descartado; o resto do cofre continua acessivel.
     }
@@ -254,8 +283,12 @@ const decryptRemoteVaultItems = (records, keys) => {
   return items;
 };
 
-const pushItemsToRemoteVault = async (remoteVault, items, vaultSecret) => {
-  let rawMeta = await remoteVault.fetchVaultMetaAsync();
+const pushItemsToRemoteVault = async (
+  remoteVault: RemoteVaultModule,
+  items: VaultItem[],
+  vaultSecret: string,
+): Promise<void> => {
+  const rawMeta = await remoteVault.fetchVaultMetaAsync();
   let meta = toMetaShape(rawMeta);
 
   if (!meta?.verifier) {
@@ -274,18 +307,20 @@ const pushItemsToRemoteVault = async (remoteVault, items, vaultSecret) => {
   }
 
   const keys = unlockVaultKeys(meta, vaultSecret);
-  const records = (Array.isArray(items) ? items : []).map((item) => {
-    const revision = {
-      revisionAt: Number(item.updatedAt || item.deletedAt || 0),
-      tombstone: Boolean(item.tombstone),
-    };
-    return {
-      id: String(item.id),
-      envelope: JSON.stringify(encryptVaultItem(item, keys, revision)),
-      updatedAt: revision.revisionAt,
-      tombstone: revision.tombstone,
-    };
-  });
+  const records: RemoteVaultRecord[] = (Array.isArray(items) ? items : []).map(
+    (item) => {
+      const revision: VaultItemRevision = {
+        revisionAt: Number(item.updatedAt || item.deletedAt || 0),
+        tombstone: Boolean(item.tombstone),
+      };
+      return {
+        id: String(item.id),
+        envelope: JSON.stringify(encryptVaultItem(item, keys, revision)),
+        updatedAt: revision.revisionAt || 0,
+        tombstone: revision.tombstone || false,
+      };
+    },
+  );
 
   await remoteVault.upsertCredentialsAsync(records);
 };
@@ -293,7 +328,9 @@ const pushItemsToRemoteVault = async (remoteVault, items, vaultSecret) => {
 // Resolve o modulo de um backend especifico (nao o preferido/ativo) - usado
 // pela UI de configuracao para obter "de onde" e "para onde" migrar, sem
 // depender da preferencia gravada (que so muda apos a migracao dar certo).
-export const getVaultModuleForBackend = async (backendId) => {
+export const getVaultModuleForBackend = async (
+  backendId: string,
+): Promise<RemoteVaultModule | null> => {
   if (backendId === SYNC_BACKEND_ICLOUD) {
     return getCloudKitModule();
   }
@@ -312,7 +349,11 @@ export const migrateVaultBackend = async ({
   fromModule,
   toModule,
   vaultSecret,
-}) => {
+}: {
+  fromModule: RemoteVaultModule | null;
+  toModule: RemoteVaultModule | null;
+  vaultSecret: string;
+}): Promise<void> => {
   if (!toModule || (await toModule.getAccountStatusAsync()) !== "available") {
     throw new Error(SYNC_BACKEND_UNAVAILABLE);
   }
@@ -340,7 +381,11 @@ export const migrateVaultBackend = async ({
   }
 };
 
-export const peekRemoteVault = async () => {
+export const peekRemoteVault = async (): Promise<{
+  available: boolean;
+  status: string;
+  meta: VaultMeta | null;
+}> => {
   const remoteVault = await getRemoteVaultModule();
   if (!remoteVault) {
     return { available: false, status: "unsupported", meta: null };
@@ -366,12 +411,15 @@ export const peekRemoteVault = async () => {
 // So pra mostrar um resumo de sanidade ao usuario ANTES de um aparelho
 // novo aceitar um cofre remoto existente pela primeira vez (nao ha cofre
 // local pra comparar nesse momento - ver comentario em
-// src/screens/HomeScreen.js, branch de registro com hasRemoteVault). Nao
+// src/screens/HomeScreen.tsx, branch de registro com hasRemoteVault). Nao
 // decifra nada: updatedAt/tombstone de cada record ja vem em texto claro.
 // Chamar so quando a confirmacao for realmente necessaria, nao no boot do
 // app - fetchCredentialsAsync e uma chamada de rede a mais que a maioria
 // dos usuarios (que ja tem conta local) nao precisa pagar toda vez.
-export const peekRemoteVaultSummary = async () => {
+export const peekRemoteVaultSummary = async (): Promise<{
+  itemCount: number;
+  lastModifiedAt: number | null;
+} | null> => {
   const remoteVault = await getRemoteVaultModule();
   if (!remoteVault) {
     return null;
@@ -401,7 +449,10 @@ export const peekRemoteVaultSummary = async () => {
   }
 };
 
-export const savePasswords = async (data, { vaultSecret } = {}) => {
+export const savePasswords = async (
+  data: VaultItem[],
+  { vaultSecret }: { vaultSecret?: string } = {},
+): Promise<void> => {
   if (!vaultSecret) {
     throw new Error(VAULT_SECRET_REQUIRED);
   }
@@ -431,8 +482,10 @@ export const savePasswords = async (data, { vaultSecret } = {}) => {
   }
 };
 
-export const loadPasswords = async ({ vaultSecret } = {}) => {
-  let cloudItems = null;
+export const loadPasswords = async ({
+  vaultSecret,
+}: { vaultSecret?: string } = {}): Promise<VaultItem[]> => {
+  let cloudItems: VaultItem[] | null = null;
   const remoteVault = await getRemoteVaultModule();
 
   if (remoteVault && vaultSecret) {
@@ -446,10 +499,10 @@ export const loadPasswords = async ({ vaultSecret } = {}) => {
       }
     } catch (err) {
       if (
-        typeof err?.message === "string" &&
-        (err.message.includes("integridade") ||
-          err.message.includes("Segredo do cofre") ||
-          err.message.includes("Metadados"))
+        typeof (err as { message?: unknown })?.message === "string" &&
+        ((err as { message: string }).message.includes("integridade") ||
+          (err as { message: string }).message.includes("Segredo do cofre") ||
+          (err as { message: string }).message.includes("Metadados"))
       ) {
         throw err;
       }
@@ -457,7 +510,7 @@ export const loadPasswords = async ({ vaultSecret } = {}) => {
     }
   }
 
-  let localData = null;
+  let localData: string | null = null;
   try {
     localData = await SecureStore.getItemAsync(KEY, SECURE_STORE_OPTIONS);
   } catch {
@@ -465,7 +518,7 @@ export const loadPasswords = async ({ vaultSecret } = {}) => {
   }
 
   const legacyKeychain = await readLegacyKeychainVault();
-  const sources = [];
+  const sources: VaultItem[][] = [];
 
   if (cloudItems) {
     sources.push(cloudItems);
@@ -496,7 +549,7 @@ export const loadPasswords = async ({ vaultSecret } = {}) => {
     return parsedLegacy;
   }
 
-  const merged = sources.reduce((acc, list) => mergeVaultItems(acc, list), []);
+  const merged = sources.reduce((acc, list) => mergeVaultItems(acc, list), [] as VaultItem[]);
 
   if (vaultSecret && remoteVault && !cloudItems) {
     try {
@@ -510,7 +563,7 @@ export const loadPasswords = async ({ vaultSecret } = {}) => {
   return merged;
 };
 
-export const clearVault = async () => {
+export const clearVault = async (): Promise<void> => {
   const remoteVault = await getRemoteVaultModule();
   if (remoteVault) {
     try {

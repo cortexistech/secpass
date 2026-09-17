@@ -8,7 +8,7 @@ const ALL_CHARS = UPPER + LOWER + DIGITS + SPECIAL;
 
 const PASSWORD_LENGTH = 16;
 
-const getRandomChar = (charset) => {
+const getRandomChar = (charset: string): string => {
   const len = charset.length;
   const maxUnbiasedByte = Math.floor(256 / len) * len;
 
@@ -20,11 +20,11 @@ const getRandomChar = (charset) => {
   }
 };
 
-const shuffleArray = (arr) => {
+const shuffleArray = (arr: string[]): string[] => {
   for (let i = arr.length - 1; i > 0; i -= 1) {
     const range = i + 1;
     const maxUnbiasedByte = Math.floor(256 / range) * range;
-    let j;
+    let j: number;
     while (true) {
       const randomByte = QuickCrypto.randomBytes(1)[0];
       if (randomByte < maxUnbiasedByte) {
@@ -39,7 +39,7 @@ const shuffleArray = (arr) => {
   return arr;
 };
 
-export const generatePassword = () => {
+export const generatePassword = (): string => {
   const charArray = [
     getRandomChar(UPPER),
     getRandomChar(LOWER),

@@ -8,7 +8,7 @@
 // e o app tem que confiar no relogio local mesmo assim (senao travaria
 // qualquer usuario legitimo offline). A defesa real contra forca bruta
 // e o custo computacional do PBKDF2 (600 mil iteracoes, ver
-// vaultCrypto.js) - esse contador aqui so cobre o caso comum de alguem
+// vaultCrypto.ts) - esse contador aqui so cobre o caso comum de alguem
 // tentando adivinhar de cabeca, nao um atacante que sabe manipular o
 // relogio do sistema.
 export const MAX_LOGIN_ATTEMPTS = 5;
@@ -16,10 +16,15 @@ const BASE_LOCK_MS = 30 * 1000;
 const MAX_LOCK_MS = 15 * 60 * 1000;
 export const LOCK_LEVEL_DECAY_MS = 6 * 60 * 60 * 1000;
 
-export const isLoginLocked = (lockUntil, nowMs = Date.now()) =>
-  Number(lockUntil) > nowMs;
+export const isLoginLocked = (
+  lockUntil: number,
+  nowMs: number = Date.now(),
+): boolean => Number(lockUntil) > nowMs;
 
-export const getLockRemainingSeconds = (lockUntil, nowMs = Date.now()) => {
+export const getLockRemainingSeconds = (
+  lockUntil: number,
+  nowMs: number = Date.now(),
+): number => {
   if (!isLoginLocked(lockUntil, nowMs)) {
     return 0;
   }
@@ -27,16 +32,29 @@ export const getLockRemainingSeconds = (lockUntil, nowMs = Date.now()) => {
   return Math.ceil((Number(lockUntil) - nowMs) / 1000);
 };
 
-const getProgressiveLockMs = (nextLockLevel) => {
+const getProgressiveLockMs = (nextLockLevel: number): number => {
   const duration = BASE_LOCK_MS * 2 ** (nextLockLevel - 1);
   return Math.min(duration, MAX_LOCK_MS);
 };
+
+export interface FailedLoginState {
+  failedAttempts: number;
+  lockLevel: number;
+  lockUntil: number;
+  justLocked: boolean;
+  remainingAttempts: number;
+  lockDurationSeconds: number;
+}
 
 export const computeFailedLoginState = ({
   failedAttempts,
   lockLevel,
   nowMs = Date.now(),
-}) => {
+}: {
+  failedAttempts: number;
+  lockLevel: number;
+  nowMs?: number;
+}): FailedLoginState => {
   const nextFailedAttempts = failedAttempts + 1;
 
   if (nextFailedAttempts < MAX_LOGIN_ATTEMPTS) {
@@ -68,7 +86,12 @@ export const applyLockDecay = ({
   lockLevel,
   lockUntil,
   nowMs = Date.now(),
-}) => {
+}: {
+  failedAttempts: number;
+  lockLevel: number;
+  lockUntil: number;
+  nowMs?: number;
+}): { failedAttempts: number; lockLevel: number; lockUntil: number } => {
   if (isLoginLocked(lockUntil, nowMs)) {
     return {
       failedAttempts,
