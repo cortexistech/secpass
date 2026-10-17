@@ -234,6 +234,22 @@ describe("vaultCrypto", () => {
     );
   });
 
+  it("rejeita authTag correto mas truncado para um tamanho que o GCM aceita", async () => {
+    // Sem fixar o tamanho, o GCM aceita os primeiros 4, 8 ou 12 bytes da tag
+    // certa, o que reduz o custo de forjar um envelope para 2^32 tentativas.
+    const envelope = await encryptVaultItems(sampleItems, "secret");
+
+    for (const hexLength of [8, 16, 24]) {
+      const tampered = {
+        ...envelope,
+        authTag: envelope.authTag.slice(0, hexLength),
+      };
+      await expect(decryptVaultEnvelope(tampered, "secret")).rejects.toThrow(
+        "Falha de integridade do cofre.",
+      );
+    }
+  });
+
   it("preserva itens com caracteres unicode e especiais", async () => {
     const vaultSecret = "secret";
     const unicodeItems = [
