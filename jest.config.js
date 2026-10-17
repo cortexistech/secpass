@@ -12,4 +12,5 @@ module.exports = {
   setupFiles: [
     "<rootDir>/node_modules/@react-native-google-signin/google-signin/jest/build/jest/setup.js",
   ],
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.js"],
 };

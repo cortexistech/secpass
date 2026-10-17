@@ -144,6 +144,21 @@ const hexToBytes = (hex: string): Uint8Array => {
   return bytes;
 };
 
+// O GCM aceita authTags truncados (de 4 a 16 bytes) se o tamanho não for
+// fixado, o que deixa forjar um envelope com bem menos tentativas. O cofre
+// sempre grava tags de 16 bytes, então qualquer outro tamanho é rejeitado.
+const GCM_AUTH_TAG_HEX_LENGTH = 32;
+
+const gcmAuthTag = (authTag: string): Uint8Array => {
+  if (
+    authTag.length !== GCM_AUTH_TAG_HEX_LENGTH ||
+    !/^[0-9a-f]+$/i.test(authTag)
+  ) {
+    throw new Error("authTag inválido.");
+  }
+  return hexToBytes(authTag);
+};
+
 export const createVaultCrypto = (adapter: VaultCryptoAdapter) => {
   const { Buffer } = adapter;
 
@@ -323,7 +338,7 @@ export const createVaultCrypto = (adapter: VaultCryptoAdapter) => {
         hexToBytes(ivHex),
       );
       decipher.setAAD(Buffer.from(`${version}:${id}`, "utf8"));
-      decipher.setAuthTag(Buffer.from(authTag, "hex"));
+      decipher.setAuthTag(gcmAuthTag(authTag));
       return Buffer.concat([
         decipher.update(Buffer.from(ciphertext, "base64")),
         decipher.final(),
@@ -407,7 +422,7 @@ export const createVaultCrypto = (adapter: VaultCryptoAdapter) => {
       decipher.setAAD(
         Buffer.from(`${version}:${id}:${revisionAt}:${tombstone}`, "utf8"),
       );
-      decipher.setAuthTag(Buffer.from(authTag, "hex"));
+      decipher.setAuthTag(gcmAuthTag(authTag));
       return Buffer.concat([
         decipher.update(Buffer.from(ciphertext, "base64")),
         decipher.final(),
@@ -649,7 +664,7 @@ export const createVaultCrypto = (adapter: VaultCryptoAdapter) => {
       decipher.setAAD(
         Buffer.from(`${version}:${saltHex}:${effectiveIterations}`, "utf8"),
       );
-      decipher.setAuthTag(Buffer.from(authTag, "hex"));
+      decipher.setAuthTag(gcmAuthTag(authTag));
       return Buffer.concat([
         decipher.update(Buffer.from(ciphertext, "base64")),
         decipher.final(),
